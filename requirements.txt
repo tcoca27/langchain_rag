@@ -1,0 +1,15 @@
+pandas
+pyarrow
+lancedb
+uvicorn
+fastapi
+aiofiles
+langchain 
+tiktoken
+chromadb
+langchain-text-splitters
+langchain-cli
+langchain-chroma
+langchain-community
+python-multipart
+pypdf

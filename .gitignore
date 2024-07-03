@@ -1,0 +1,4 @@
+.venv
+chroma_db
+uploaded_files
+__pycache__

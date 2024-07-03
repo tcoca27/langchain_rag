@@ -1,0 +1,37 @@
+version: '3'
+
+services:
+  fastapi:
+    build:
+      context: ./
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    volumes:
+      - uploaded_files:/app/uploaded_files
+      - lancedb_data:/app/lancedb
+    networks:
+      - app_network
+    environment:
+      - OLLAMA_BASE=http://host.docker.internal:11434
+
+  streamlit:
+    build:
+      context: ./
+      dockerfile: Dockerfile.ui
+    ports:
+      - "8501:8501"
+    depends_on:
+      - fastapi
+    networks:
+      - app_network
+    environment:
+      - API_URL=http://fastapi:8000
+
+networks:
+  app_network:
+    driver: bridge
+
+volumes:
+  lancedb_data:
+  uploaded_files:
