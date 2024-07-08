@@ -18,6 +18,7 @@ from langchain.chains import create_history_aware_retriever, create_retrieval_ch
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.chat_models import ChatOllama
+from langchain_core.documents import Document
 
 import constants
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
