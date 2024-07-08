@@ -2,3 +2,5 @@
 chroma_db*
 uploaded_files
 __pycache__
+.vscode
+evals
