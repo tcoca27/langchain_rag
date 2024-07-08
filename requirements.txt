@@ -13,3 +13,6 @@ langchain-chroma
 langchain-community
 python-multipart
 pypdf
+lancedb
+torch
+transformers

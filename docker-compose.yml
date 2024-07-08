@@ -9,7 +9,7 @@ services:
       - "8000:8000"
     volumes:
       - uploaded_files:/app/uploaded_files
-      - lancedb_data:/app/lancedb
+      - chroma_db_id:/app/chroma_db_id
     networks:
       - app_network
     environment:
@@ -33,5 +33,5 @@ networks:
     driver: bridge
 
 volumes:
-  lancedb_data:
+  chroma_db_id:
   uploaded_files:

@@ -20,6 +20,21 @@ from langchain_community.embeddings import OllamaEmbeddings
 from langchain_community.chat_models import ChatOllama
 
 import constants
+from langchain_core.runnables import RunnablePassthrough, RunnableLambda
+from langchain_core.prompts import ChatPromptTemplate, PromptTemplate 
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.messages import HumanMessage, AIMessage
+import uuid
+from langchain.retrievers.multi_query import MultiQueryRetriever
+import logging
+from mqr import mqr_chain
+import lancedb.rerankers
+import pyarrow as pa
+
+logging.basicConfig()
+logging.getLogger("langchain.retrievers.multi_query").setLevel(logging.INFO)
+
+reranker = lancedb.rerankers.ColbertReranker()
 
 app = FastAPI()
 
@@ -32,8 +47,68 @@ llm = ChatOllama(base_url=OLLAMA_BASE, model="gemma2")
 embed_model = OllamaEmbeddings(base_url=OLLAMA_BASE, model="nomic-embed-text")
 
 # Initialize vector store
-vectorstore = Chroma(embedding_function=embed_model, persist_directory="./chroma_db")
-retriever = vectorstore.as_retriever()
+vectorstore = Chroma(embedding_function=embed_model, persist_directory="./chroma_db_id")
+search_args = {
+    "k": 20,
+}
+retriever = vectorstore.as_retriever(search_kwargs=search_args)
+multi_query_retriever = MultiQueryRetriever(
+    retriever=retriever,
+    llm_chain=mqr_chain,
+    parser_key="lines",
+)
+
+
+def get_neighboring_chunks(doc: Document, k: int = 1) -> List[Document]:
+    doc_id = doc.metadata.get('doc_id')
+    found = vectorstore.get(where={"doc_id": {"$eq": f"{int(doc_id)+1}"}})
+    return [Document(found['documents'][0], metadata=found['metadatas'][0])] if found and len(found['documents']) > 0 else []
+
+def rerank_documents(query: str, documents: List[Document], threshold: float = 0.1, k_neighbors: int = 1) -> List[Document]:
+    doc_texts = [doc.page_content for doc in documents]
+    k = min(5, len(doc_texts))
+    res_rerank = reranker._rerank(query=query, result_set=pa.table([pa.array(doc_texts), pa.array([i for i in range(len(doc_texts))])], names=['text', 'index'])).to_pandas()
+    indexes = []
+    for i, row in res_rerank.iterrows():
+        if row['_relevance_score'] > threshold and len(indexes) < k:
+            indexes.append(row['index'])
+    reranked_docs = [documents[i] for i in indexes]
+    
+    # Get neighboring chunks for each reranked document
+    expanded_docs = []
+    seen_content = set()
+    for doc in reranked_docs:
+        if doc.page_content not in seen_content:
+            expanded_docs.append(doc)
+        neighbors = get_neighboring_chunks(doc, k=k_neighbors)
+        for neighbor in neighbors:
+            seen_content.add(neighbor.page_content)
+            if neighbor.page_content not in seen_content:
+                expanded_docs.append(neighbor)
+
+    
+    print(f"Number of documents after reranking and neighbour search: {len(expanded_docs)}")
+    return expanded_docs
+
+class RerankingRetriever:
+    def __init__(self, base_retriever):
+        self.base_retriever = base_retriever
+
+    def get_relevant_documents(self, query):
+        docs = self.base_retriever.invoke(query)
+        print(f"Number of documents retrieved: {len(docs)}")
+        # Remove duplicates while preserving order
+        unique_docs = []
+        seen_content = set()
+        for doc in docs:
+            if doc.page_content not in seen_content:
+                unique_docs.append(doc)
+                seen_content.add(doc.page_content)
+        print(f"Number of documents after deduplication: {len(unique_docs)}")
+        
+        return rerank_documents(query, unique_docs)
+
+retriever = RerankingRetriever(multi_query_retriever)
 
 # Contextualize question
 contextualize_q_system_prompt = """Given a chat history and the latest user question \
